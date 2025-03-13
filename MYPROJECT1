@@ -1,0 +1,128 @@
+# Install necessary libraries for Google Colab
+!pip install openai pycountry pycountry-convert
+
+# Import required libraries
+import time
+import openai
+import pycountry
+import pycountry_convert as pc
+from openai import OpenAI
+import re
+
+# Set up continents and their corresponding codes
+continents = {
+    'AF': 'Africa',
+    'AS': 'Asia',
+    'EU': 'Europe',
+    'NA': 'North America',
+    'SA': 'South America',
+    'OC': 'Oceania',
+    'AN': 'Antarctica'
+}
+
+# Create a dictionary mapping continents to countries
+countries_by_continent = {}
+for country in pycountry.countries:
+    try:
+        continent_code = pc.country_alpha2_to_continent_code(country.alpha_2)
+        continent_name = continents[continent_code]
+        if continent_name not in countries_by_continent:
+            countries_by_continent[continent_name] = []
+        countries_by_continent[continent_name].append(country.name)
+    except KeyError:
+        pass  # Skip territories without a continent code
+
+# Prompt user for OpenAI API key
+print("Please obtain an OpenAI API key from https://openai.com/api/ if you don't have one.")
+api_key = input("Enter your OpenAI API key: ")
+client = OpenAI(api_key=api_key)
+
+# Helper functions
+def display_options(options, title):
+    """Display a numbered list of options."""
+    print(f"\n{title}:")
+    for i, option in enumerate(options, 1):
+        print(f"{i}. {option}")
+    return len(options)
+
+def get_user_choice(max_options):
+    """Get and validate user's numeric choice."""
+    while True:
+        try:
+            choice = int(input("\nEnter your choice (number): "))
+            if 1 <= choice <= max_options:
+                return choice - 1  # Return zero-based index
+            print(f"Please enter a number between 1 and {max_options}.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+def get_openai_response(prompt):
+    """Fetch response from OpenAI API with web assistance hint."""
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You can use web information to provide accurate and up-to-date answers."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+# Main interaction
+print("Welcome to the Educational Institution Finder!")
+print("Today’s date:", time.strftime("%B %d, %Y"))
+time.sleep(1)
+
+# Step 1: Select continent
+continent_list = list(countries_by_continent.keys())
+display_options(continent_list, "Select a continent")
+continent_choice = get_user_choice(len(continent_list))
+selected_continent = continent_list[continent_choice]
+print(f"You selected: {selected_continent}")
+
+# Step 2: Select country
+country_list = countries_by_continent[selected_continent]
+display_options(country_list, f"Select a country in {selected_continent}")
+country_choice = get_user_choice(len(country_list))
+selected_country = country_list[country_choice]
+print(f"You selected: {selected_country}")
+
+# Step 3: Select stream
+streams = ["Engineering", "Medicine"]
+display_options(streams, "Select a stream")
+stream_choice = get_user_choice(len(streams))
+selected_stream = streams[stream_choice]
+print(f"You selected: {selected_stream}")
+
+# Step 4: Generate comprehensive institution list using OpenAI
+prompt = f"Provide a comprehensive list of all {selected_stream} universities in {selected_country}. " \
+         f"Include as many institutions as possible, not just the top ones, and use web information if needed."
+institution_list_text = get_openai_response(prompt)
+
+# Parse the list (assuming numbered or bulleted format)
+institutions = [re.sub(r'^\d+\.\s*|\s*-\s*|\*\s*', '', line).strip() 
+                for line in institution_list_text.split('\n') 
+                if line.strip() and not line.strip().startswith(('Here', 'Below', 'Note', ':'))]
+if not institutions:
+    print("Sorry, I couldn't retrieve the list of institutions. Please try again later.")
+else:
+    # Step 5: Display institutions
+    display_options(institutions, f"{selected_stream} Institutions in {selected_country}")
+    institution_choice = get_user_choice(len(institutions))
+    selected_institution = institutions[institution_choice]
+    print(f"\nYou selected: {selected_institution}")
+
+    # Step 6: Query loop for detailed questions
+    print("\nYou can now ask any question about the selected institution.")
+    while True:
+        query = input(f"What would you like to know about {selected_institution}? (Type 'exit' to finish): ").strip()
+        if query.lower() == 'exit':
+            break
+        prompt = f"Regarding {selected_institution} in {selected_country}, {query}. Use web information if necessary to provide an accurate and detailed answer."
+        answer = get_openai_response(prompt)
+        print(f"\n{answer}")
+
+# Farewell message
+print("\nThank you for using the Educational Institution Finder! Have a great day!")
